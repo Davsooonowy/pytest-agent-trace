@@ -8,13 +8,15 @@ CASSETTE = "examples/weather_query.cassette.jsonl"
 def test_tool_called_and_final_output():
     trace = AgentTrace.from_cassette(CASSETTE)
 
-    assert_trajectory(trace) \
-        .tool_called("get_weather", times=1) \
-        .tool_called_with("get_weather", city="Warszawa") \
-        .tool_not_called("send_email") \
-        .order(["get_weather"]) \
-        .max_llm_calls(2) \
+    (
+        assert_trajectory(trace)
+        .tool_called("get_weather", times=1)
+        .tool_called_with("get_weather", city="Warszawa")
+        .tool_not_called("send_email")
+        .order(["get_weather"])
+        .max_llm_calls(2)
         .final_output_contains("18")
+    )
 
 
 def test_tool_called_wrong_count_fails():

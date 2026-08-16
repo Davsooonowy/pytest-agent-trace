@@ -6,7 +6,7 @@ Nowy typ zdarzenia to nowy wariant tej unii, nie migracja istniejących kaset.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -52,7 +52,7 @@ class RunFinished(BaseModel):
 
 
 AgentEvent = Annotated[
-    Union[RunStarted, LLMCall, ToolCall, RunFinished],
+    RunStarted | LLMCall | ToolCall | RunFinished,
     Field(discriminator="type"),
 ]
 

@@ -1,5 +1,6 @@
 [project]
 name = "pytest-agent-trace"
+authors = [{ name = "Dawid Mularczyk" }]
 version = "0.1.0"
 description = "pytest for AI agents — trajectory-level recording, replay and assertions for LangGraph/LangChain agents"
 readme = "README.md"
@@ -13,7 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 langgraph = [
-    "langchain-core>=0.3",
+    "langchain-core>=1.0",
     "langgraph>=0.2",
 ]
 fuzzy = [
@@ -44,3 +45,6 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

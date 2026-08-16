@@ -17,7 +17,7 @@ class TrajectoryAssertion:
     def __init__(self, trace: AgentTrace) -> None:
         self.trace = trace
 
-    def tool_called(self, name: str, times: int | None = None) -> "TrajectoryAssertion":
+    def tool_called(self, name: str, times: int | None = None) -> TrajectoryAssertion:
         count = self.trace.tool_call_count(name)
         if times is None:
             assert count > 0, f'Tool "{name}" was never called (trajectory: {self._tool_names()})'
@@ -28,12 +28,12 @@ class TrajectoryAssertion:
             )
         return self
 
-    def tool_not_called(self, name: str) -> "TrajectoryAssertion":
+    def tool_not_called(self, name: str) -> TrajectoryAssertion:
         count = self.trace.tool_call_count(name)
         assert count == 0, f'Tool "{name}" was called {count} time(s), expected 0'
         return self
 
-    def tool_called_with(self, name: str, **kwargs: Any) -> "TrajectoryAssertion":
+    def tool_called_with(self, name: str, **kwargs: Any) -> TrajectoryAssertion:
         calls = [c for c in self.trace.tool_calls if c.tool == name]
         assert calls, f'Tool "{name}" was never called'
         for call in calls:
@@ -44,7 +44,7 @@ class TrajectoryAssertion:
             f'Tool "{name}" was called, but never with args {kwargs}. Actual args: {actual_args}'
         )
 
-    def order(self, tool_names: list[str]) -> "TrajectoryAssertion":
+    def order(self, tool_names: list[str]) -> TrajectoryAssertion:
         actual = self._tool_names()
         it = iter(actual)
         for expected_name in tool_names:
@@ -55,12 +55,12 @@ class TrajectoryAssertion:
                 )
         return self
 
-    def max_llm_calls(self, n: int) -> "TrajectoryAssertion":
+    def max_llm_calls(self, n: int) -> TrajectoryAssertion:
         count = len(self.trace.llm_calls)
         assert count <= n, f"Expected at most {n} LLM call(s), got {count}"
         return self
 
-    def final_output_contains(self, substring: str) -> "TrajectoryAssertion":
+    def final_output_contains(self, substring: str) -> TrajectoryAssertion:
         output = self.trace.final_output
         assert output is not None, "Trace has no final_output (run_finished event missing)"
         assert substring in str(output), f"final_output {output!r} does not contain {substring!r}"
