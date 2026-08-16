@@ -39,10 +39,10 @@ def test_cassette_writer_appends_and_assigns_seq(tmp_path: Path):
 
     run_id = "r1"
     writer.append(RunStarted(seq=writer.next_seq(), run_id=run_id, input={"query": "hi"}))
+    writer.append(LLMCall(seq=writer.next_seq(), run_id=run_id, parent_seq=1, response="thinking"))
     writer.append(
-        LLMCall(seq=writer.next_seq(), run_id=run_id, parent_seq=1, response="thinking")
+        RunFinished(seq=writer.next_seq(), run_id=run_id, parent_seq=2, final_output="done")
     )
-    writer.append(RunFinished(seq=writer.next_seq(), run_id=run_id, parent_seq=2, final_output="done"))
 
     reloaded = load_cassette(out)
     assert [e.seq for e in reloaded] == [1, 2, 3]

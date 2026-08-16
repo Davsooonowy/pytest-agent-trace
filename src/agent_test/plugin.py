@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from agent_test.core.assertions import assert_trajectory
 from agent_test.core.trace import AgentTrace
 
 

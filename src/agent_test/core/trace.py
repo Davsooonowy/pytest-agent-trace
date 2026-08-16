@@ -25,7 +25,7 @@ class AgentTrace:
         self.events.sort(key=lambda e: e.seq)
 
     @classmethod
-    def from_cassette(cls, path: str | Path, run_id: str | None = None) -> "AgentTrace":
+    def from_cassette(cls, path: str | Path, run_id: str | None = None) -> AgentTrace:
         return cls(load_cassette(path), run_id=run_id)
 
     @property

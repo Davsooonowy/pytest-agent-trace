@@ -1,4 +1,4 @@
-"""`agent-trace` CLI — cassette inspection utilities (recording/diffing lives in the pytest plugin)."""
+"""`agent-trace` CLI — cassette inspection (recording/diffing lives in the pytest plugin)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,8 @@ def show(cassette: str) -> None:
     """Print a human-readable timeline of a cassette's events."""
     trace = AgentTrace.from_cassette(cassette)
     for event in trace.events:
-        typer.echo(f"[{event.seq:>3}] {event.type:<12} {event.model_dump_json(exclude={'seq', 'type'})}")
+        payload = event.model_dump_json(exclude={"seq", "type"})
+        typer.echo(f"[{event.seq:>3}] {event.type:<12} {payload}")
 
 
 if __name__ == "__main__":
