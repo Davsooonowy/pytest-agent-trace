@@ -1,0 +1,5 @@
+{"seq": 1, "type": "run_started", "run_id": "r1", "input": {"query": "Jaka jest pogoda w Warszawie?"}}
+{"seq": 2, "type": "llm_call", "run_id": "r1", "parent_seq": 1, "prompt_hash": "a3f", "response": "Musze sprawdzic pogode", "model": "claude-sonnet-4-6"}
+{"seq": 3, "type": "tool_call", "run_id": "r1", "parent_seq": 2, "tool": "get_weather", "args": {"city": "Warszawa"}, "result": {"temp": 18}, "duration_ms": 340, "status": "ok"}
+{"seq": 4, "type": "llm_call", "run_id": "r1", "parent_seq": 3, "response": "W Warszawie jest 18 stopni"}
+{"seq": 5, "type": "run_finished", "run_id": "r1", "final_output": "W Warszawie jest 18 stopni"}
