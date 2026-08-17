@@ -20,6 +20,15 @@ langchain-core==1.5 (a hand-rolled StateGraph + ToolNode agent driven by a
 - `on_tool_start`'s `data["input"]` is already the plain tool-args dict.
   `on_tool_end`'s `data["output"]` is a `ToolMessage`; its `.content` is
   whatever the tool returned, JSON-encoded by LangChain if it wasn't a string.
+  Its `.status` is the string `"success"` or `"error"` — not `"ok"`/`"error"`
+  like our own `ToolCall.status` — so the recorder remaps it.
+- A tool call whose `_run` *raises* fires `on_tool_error`, not `on_tool_end`
+  — even when `ToolNode(handle_tool_errors=True)` goes on to catch that same
+  exception and turn it into an error `ToolMessage` for the graph's own
+  conversation state. Skipping `on_tool_error` means a raised exception
+  (chaos-injected or real) silently disappears from the cassette instead of
+  recording as a failed `tool_call` — found while building chaos engineering
+  support, where tools are expected to raise on purpose.
 
 Replay (`LangGraphReplayer`) patches a model/tool *instance* so a graph
 replays a cassette instead of calling the real API or running real tool
@@ -34,11 +43,28 @@ through the same cursor regardless of which one was actually called.
 The fix is `object.__setattr__`/`object.__delattr__`, which bypass
 pydantic's `__setattr__` entirely and set/remove a plain instance-`__dict__`
 entry that shadows the class method for that one object only.
+
+Chaos injection (`inject_tool_chaos`) reuses the exact same `_run`/`_arun`
+patching technique, but doesn't need a cassette at all — it wraps the *real*
+tool implementation, letting every call through except the ones a
+`ChaosScenario` targets. Two things worth knowing before writing a chaos
+test: LangGraph's `ToolNode` does **not** catch a plain exception raised
+from a tool by default — `handle_tool_errors` defaults to a function that
+only converts LangGraph's own internal `ToolInvocationError` and re-raises
+everything else, confirmed empirically (a raised `TimeoutError` propagated
+straight out of `graph.invoke()` and killed the run). Build your graph's
+`ToolNode` with `handle_tool_errors=True` if you want a chaos-injected
+exception to become an error `ToolMessage` the agent can react to instead of
+a crash. And a model replayed from a cassette (`LangGraphReplayer`) plays
+back the *exact* canned response regardless of what the tool actually
+returned — genuinely reactive behavior (retry, escalate) requires either a
+live model or a hand-rolled reactive stand-in, not pure cassette replay.
 """
 
 from __future__ import annotations
 
 import asyncio
+import functools
 import hashlib
 import json
 import time
@@ -47,6 +73,7 @@ from contextlib import ExitStack, contextmanager
 from typing import Any
 
 from agent_test.core.cassette import CassetteWriter
+from agent_test.core.chaos import ChaosScenario
 from agent_test.core.trace import AgentTrace
 
 
@@ -136,6 +163,34 @@ class LangGraphRecorder:
                         tool=event.get("name", "unknown_tool"),
                         args=event["data"].get("input") or {},
                         result=_decode_tool_result(getattr(tool_message, "content", tool_message)),
+                        status="error"
+                        if getattr(tool_message, "status", None) == "error"
+                        else "ok",
+                        duration_ms=_duration_ms(pending_starts.pop(ev_run_id, None)),
+                    )
+                )
+                last_seq = seq
+
+            elif kind == "on_tool_error":
+                # A tool that *raises* (rather than returning an error value)
+                # fires this instead of on_tool_end — even when the graph's
+                # ToolNode has handle_tool_errors=True and goes on to convert
+                # the exception into an error ToolMessage for the agent's own
+                # conversation state. Without handling this event, a raised
+                # exception (e.g. from chaos.ChaosScenario.timeout) simply
+                # vanishes from the cassette instead of showing up as a
+                # failed tool_call.
+                error = event["data"].get("error")
+                seq = writer.next_seq()
+                writer.append(
+                    ToolCall(
+                        seq=seq,
+                        run_id=run_id,
+                        parent_seq=last_llm_seq,
+                        tool=event.get("name", "unknown_tool"),
+                        args=event["data"].get("input") or {},
+                        result=str(error) if error is not None else None,
+                        status="error",
                         duration_ms=_duration_ms(pending_starts.pop(ev_run_id, None)),
                     )
                 )
@@ -279,3 +334,54 @@ class LangGraphReplayer:
             for tool in tools:
                 stack.enter_context(self.patch_tool(tool))
             yield
+
+
+@contextmanager
+def inject_tool_chaos(tool: Any, scenario: ChaosScenario):
+    """Wrap one *real* tool instance so specific calls (per `scenario`) fail
+    while every other call runs the tool's actual implementation.
+
+    Unlike `LangGraphReplayer.patch_tool`, this doesn't replace the tool at
+    all — it wraps it, so the agent (and its model) can be live/reactive and
+    genuinely respond to the injected fault, not just play back a script.
+    """
+    call_count = 0
+    real_run = tool._run
+    real_arun = tool._arun
+
+    # `BaseTool.run`/`arun` decide whether to inject `config`/`run_manager`
+    # by inspecting the target callable's signature. `functools.wraps` copies
+    # `__wrapped__`, which `inspect.signature` follows by default — so these
+    # wrappers get treated exactly like the real `_run`/`_arun` for injection
+    # purposes, and forwarding `*args, **kwargs` to `real_run`/`real_arun`
+    # below actually has everything it needs (verified empirically: without
+    # `wraps`, `real_run(*args, **kwargs)` failed with "missing required
+    # keyword-only argument: 'config'").
+
+    @functools.wraps(real_run)
+    def sync_run(*args: Any, **kwargs: Any) -> Any:
+        nonlocal call_count
+        call_count += 1
+        should_fault, action = scenario.apply(call_count)
+        if should_fault:
+            assert action is not None
+            return action()
+        return real_run(*args, **kwargs)
+
+    @functools.wraps(real_arun)
+    async def async_run(*args: Any, **kwargs: Any) -> Any:
+        nonlocal call_count
+        call_count += 1
+        should_fault, action = scenario.apply(call_count)
+        if should_fault:
+            assert action is not None
+            return action()
+        return await real_arun(*args, **kwargs)
+
+    object.__setattr__(tool, "_run", sync_run)
+    object.__setattr__(tool, "_arun", async_run)
+    try:
+        yield tool
+    finally:
+        object.__delattr__(tool, "_run")
+        object.__delattr__(tool, "_arun")
