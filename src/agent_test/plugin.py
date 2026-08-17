@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from agent_test.core.diff import TrajectoryDiff, diff_trajectories
 from agent_test.core.trace import AgentTrace
 
 
@@ -50,6 +51,23 @@ class AgentCassetteFixture:
             f"Live result {result!r} does not match the recorded final_output {expected!r} "
             f"from {self._path}"
         )
+
+    def diff_against_baseline(self, baseline_path: str | Path) -> TrajectoryDiff:
+        """Diff the loaded/recorded trace against a stored baseline cassette.
+
+        Always returns the `TrajectoryDiff` for inspection. Only raises when
+        `--agent-diff-baseline` was passed on the command line *and* the diff
+        contains a significant (tool-call-level) change — informational-only
+        diffs (LLM wording, final answer phrasing) never fail the test.
+        """
+        assert self.trace is not None, (
+            "call agent_cassette.load(...) before diff_against_baseline(...)"
+        )
+        baseline_trace = AgentTrace.from_cassette(baseline_path)
+        diff = diff_trajectories(baseline_trace, self.trace)
+        if self.diff_baseline and diff.is_significant:
+            raise AssertionError(diff.render())
+        return diff
 
 
 @pytest.fixture
