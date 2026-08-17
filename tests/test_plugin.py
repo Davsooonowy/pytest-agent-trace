@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 CASSETTE = (Path(__file__).parent.parent / "examples" / "weather_query.cassette.jsonl").resolve()
 
 
@@ -85,3 +87,45 @@ def test_diff_against_baseline_fails_with_flag_on_significant_change(pytester):
     result = pytester.runpytest("--agent-diff-baseline")
     result.assert_outcomes(failed=1)
     result.stdout.fnmatch_lines(["*args changed*"])
+
+
+def test_record_langgraph_actually_runs_and_records(pytester):
+    pytest.importorskip("langgraph")
+    pytester.makepyfile(
+        """
+        from weather_agent import build_weather_agent
+
+        def test_record(agent_cassette):
+            agent = build_weather_agent()
+            agent_cassette.load("recorded.cassette.jsonl")
+            assert agent_cassette.trace is None  # nothing to replay yet in --record mode
+
+            if agent_cassette.record:
+                agent_cassette.record_langgraph(
+                    agent.graph, {"messages": [("user", "Jaka jest pogoda w Warszawie?")]}
+                )
+
+            assert agent_cassette.trace.final_output == "W Warszawie jest 18 stopni"
+        """
+    )
+    result = pytester.runpytest("--record")
+    result.assert_outcomes(passed=1)
+
+    cassette = pytester.path / "recorded.cassette.jsonl"
+    assert cassette.exists()
+    lines = cassette.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 5
+    assert '"type":"run_started"' in lines[0]
+
+
+def test_without_record_flag_load_replays_immediately(pytester):
+    pytester.makepyfile(
+        f"""
+        def test_replay(agent_cassette):
+            trace = agent_cassette.load(r"{CASSETTE}")
+            assert trace is not None
+            assert agent_cassette.trace is trace
+        """
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
