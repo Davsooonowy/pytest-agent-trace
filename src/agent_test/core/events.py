@@ -26,6 +26,7 @@ class LLMCall(BaseModel):
     parent_seq: int | None = None
     prompt_hash: str | None = None
     response: str
+    tool_calls: list[dict[str, Any]] | None = None
     model: str | None = None
     duration_ms: int | None = None
     status: Literal["ok", "error"] = "ok"
