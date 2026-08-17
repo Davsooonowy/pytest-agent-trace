@@ -20,6 +20,20 @@ langchain-core==1.5 (a hand-rolled StateGraph + ToolNode agent driven by a
 - `on_tool_start`'s `data["input"]` is already the plain tool-args dict.
   `on_tool_end`'s `data["output"]` is a `ToolMessage`; its `.content` is
   whatever the tool returned, JSON-encoded by LangChain if it wasn't a string.
+
+Replay (`LangGraphReplayer`) patches a model/tool *instance* so a graph
+replays a cassette instead of calling the real API or running real tool
+code. This can't use `unittest.mock.patch.object` the normal way: chat
+models and tools are pydantic v2 `BaseModel`s, and pydantic's `__setattr__`
+rejects setting any attribute that isn't a declared field (`ValueError:
+"X" object has no field "invoke"`) — confirmed empirically, not assumed.
+Patching the *class* instead (`type(model).invoke = ...`) does work, but is
+wrong here: every `@tool`-decorated function is an instance of the same
+`StructuredTool` class, so a class-level patch would replay every tool
+through the same cursor regardless of which one was actually called.
+The fix is `object.__setattr__`/`object.__delattr__`, which bypass
+pydantic's `__setattr__` entirely and set/remove a plain instance-`__dict__`
+entry that shadows the class method for that one object only.
 """
 
 from __future__ import annotations
@@ -28,9 +42,12 @@ import asyncio
 import hashlib
 import json
 import time
+from collections.abc import Sequence
+from contextlib import ExitStack, contextmanager
 from typing import Any
 
 from agent_test.core.cassette import CassetteWriter
+from agent_test.core.trace import AgentTrace
 
 
 def _duration_ms(started_at: float | None) -> int | None:
@@ -89,6 +106,7 @@ class LangGraphRecorder:
 
             elif kind == "on_chat_model_end":
                 ai_message = event["data"]["output"]
+                tool_calls = getattr(ai_message, "tool_calls", None)
                 seq = writer.next_seq()
                 writer.append(
                     LLMCall(
@@ -97,6 +115,7 @@ class LangGraphRecorder:
                         parent_seq=last_seq,
                         prompt_hash=_hash_prompt(event["data"].get("input")),
                         response=getattr(ai_message, "content", str(ai_message)),
+                        tool_calls=list(tool_calls) if tool_calls else None,
                         model=event.get("metadata", {}).get("ls_model_name") or event.get("name"),
                         duration_ms=_duration_ms(pending_starts.pop(ev_run_id, None)),
                     )
@@ -137,3 +156,126 @@ class LangGraphRecorder:
     def record(self, input: dict[str, Any], run_id: str | None = None, **stream_kwargs: Any) -> str:
         """Sync convenience wrapper around `arecord` for simple pytest usage."""
         return asyncio.run(self.arecord(input, run_id=run_id, **stream_kwargs))
+
+
+class ReplayExhaustedError(RuntimeError):
+    """Raised when a replayed run calls the model/a tool more times than the
+    cassette has recorded events for — the agent's real behavior diverged
+    from what was recorded (different control flow, an extra retry, ...).
+    """
+
+
+class LangGraphReplayer:
+    """Patches a chat model and its tools so a LangGraph run replays a
+    recorded cassette instead of calling the real API or executing real tool
+    code — fully offline, deterministic, zero API cost.
+
+    Matching is sequential/index-based: the Nth `arecord`ed llm_call answers
+    the Nth model invocation, the Nth tool_call answers the Nth call to that
+    tool, regardless of the live prompt/args. This is the simplest strategy
+    and the one `langchain-replay` validated in a real implementation (see
+    project notes) — a stricter hash/semantic match can be layered on later
+    as an opt-in, but sequential is the correct default.
+    """
+
+    def __init__(self, trace: AgentTrace) -> None:
+        self.trace = trace
+        self._llm_calls = iter(trace.llm_calls)
+        self._tool_calls_by_name: dict[str, Any] = {}
+        for call in trace.tool_calls:
+            self._tool_calls_by_name.setdefault(call.tool, []).append(call)
+        self._tool_cursors: dict[str, int] = {}
+
+    @classmethod
+    def from_cassette(cls, location: str, run_id: str | None = None) -> LangGraphReplayer:
+        return cls(AgentTrace.from_cassette(location, run_id=run_id))
+
+    def _next_ai_message(self) -> Any:
+        from langchain_core.messages import AIMessage
+
+        try:
+            recorded = next(self._llm_calls)
+        except StopIteration as exc:
+            raise ReplayExhaustedError(
+                "cassette has no more recorded llm_call events, but the model was "
+                "invoked again — the replayed agent's behavior diverged from the recording"
+            ) from exc
+        return AIMessage(content=recorded.response, tool_calls=recorded.tool_calls or [])
+
+    def _next_tool_result(self, tool_name: str) -> Any:
+        calls = self._tool_calls_by_name.get(tool_name, [])
+        cursor = self._tool_cursors.get(tool_name, 0)
+        if cursor >= len(calls):
+            raise ReplayExhaustedError(
+                f'cassette has no more recorded tool_call events for "{tool_name}", but it '
+                "was called again — the replayed agent's behavior diverged from the recording"
+            )
+        self._tool_cursors[tool_name] = cursor + 1
+        return calls[cursor].result
+
+    @contextmanager
+    def patch_model(self, model: Any):
+        """Patch one model instance for the duration of the `with` block.
+
+        Patches `_generate`/`_agenerate` — the *leaf* methods `invoke`/
+        `ainvoke` call internally — rather than `invoke`/`ainvoke` themselves.
+        Patching `invoke` directly would also work for driving the graph, but
+        it bypasses the tracing machinery that emits `on_chat_model_start`/
+        `on_chat_model_end`, so a replayed run couldn't be re-recorded into a
+        cassette (verified empirically: `astream_events` saw zero llm_call
+        events when `invoke` was replaced wholesale). Patching `_generate`
+        keeps the outer `invoke`/tracing wrapper intact.
+
+        Uses `object.__setattr__`/`__delattr__`, not `mock.patch.object` —
+        see the module docstring for why that fails on a pydantic model.
+        """
+        from langchain_core.outputs import ChatGeneration, ChatResult
+
+        def make_result(*_args: Any, **_kwargs: Any) -> ChatResult:
+            return ChatResult(generations=[ChatGeneration(message=self._next_ai_message())])
+
+        async def async_generate(*_args: Any, **_kwargs: Any) -> ChatResult:
+            return make_result()
+
+        object.__setattr__(model, "_generate", make_result)
+        object.__setattr__(model, "_agenerate", async_generate)
+        try:
+            yield model
+        finally:
+            object.__delattr__(model, "_generate")
+            object.__delattr__(model, "_agenerate")
+
+    @contextmanager
+    def patch_tool(self, tool: Any):
+        """Patch one tool instance's `_run`/`_arun` (not `invoke`/`ainvoke`,
+        for the same tracing reason as `patch_model`) for the duration of the
+        `with` block, matched by `tool.name` (falls back to `__name__`/
+        `str(tool)` for plain callables). The outer `invoke`/`ainvoke`
+        wrapper takes care of packaging our raw return value into a
+        `ToolMessage` with the correct `tool_call_id`, exactly as it would
+        for the real tool function.
+        """
+        name = str(getattr(tool, "name", None) or getattr(tool, "__name__", str(tool)))
+
+        def sync_run(*_args: Any, **_kwargs: Any) -> Any:
+            return self._next_tool_result(name)
+
+        async def async_run(*_args: Any, **_kwargs: Any) -> Any:
+            return self._next_tool_result(name)
+
+        object.__setattr__(tool, "_run", sync_run)
+        object.__setattr__(tool, "_arun", async_run)
+        try:
+            yield tool
+        finally:
+            object.__delattr__(tool, "_run")
+            object.__delattr__(tool, "_arun")
+
+    @contextmanager
+    def patch(self, model: Any, tools: Sequence[Any] = ()):
+        """Patch a model and any number of tools together in one `with`."""
+        with ExitStack() as stack:
+            stack.enter_context(self.patch_model(model))
+            for tool in tools:
+                stack.enter_context(self.patch_tool(tool))
+            yield

@@ -11,9 +11,9 @@ from agent_test.adapters.langgraph import LangGraphRecorder  # noqa: E402
 
 
 def test_records_a_real_run_into_a_valid_cassette(tmp_path: Path):
-    graph = build_weather_agent()
+    agent = build_weather_agent()
     cassette_path = tmp_path / "weather_query.cassette.jsonl"
-    recorder = LangGraphRecorder(graph, str(cassette_path))
+    recorder = LangGraphRecorder(agent.graph, str(cassette_path))
 
     run_id = recorder.record({"messages": [("user", "Jaka jest pogoda w Warszawie?")]})
 
@@ -38,9 +38,9 @@ def test_records_a_real_run_into_a_valid_cassette(tmp_path: Path):
 
 
 def test_cassette_is_plain_jsonl_lines(tmp_path: Path):
-    graph = build_weather_agent()
+    agent = build_weather_agent()
     cassette_path = tmp_path / "weather_query.cassette.jsonl"
-    LangGraphRecorder(graph, str(cassette_path)).record(
+    LangGraphRecorder(agent.graph, str(cassette_path)).record(
         {"messages": [("user", "Jaka jest pogoda w Warszawie?")]}
     )
 
