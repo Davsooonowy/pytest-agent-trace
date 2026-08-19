@@ -29,6 +29,9 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "pytest-cov>=5.0",
+    # only needed to run examples/f1_agent.py and its test - not a supported
+    # integration, just the model this repo's own demo happens to use
+    "langchain-ollama>=1.0",
 ]
 
 [project.entry-points.pytest11]
