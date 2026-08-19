@@ -50,7 +50,7 @@ pytest             # every run after: replays from disk, no API calls, no cost
 pip install "pytest-agent-trace[langgraph]"
 ```
 
-`[langgraph]` is a pip "extra" — it pulls in `langchain-core`/`langgraph` alongside the base package, since those are only needed if you're actually recording/replaying a LangGraph agent. The distribution is `pytest-agent-trace`; the package you import is `agent_test`. The pytest plugin registers itself automatically via the `pytest11` entry point — no `conftest.py` wiring needed.
+The distribution is `pytest-agent-trace`; the package you import is `agent_test`. The pytest plugin registers itself automatically via the `pytest11` entry point — no `conftest.py` wiring needed.
 
 ## How it works
 
