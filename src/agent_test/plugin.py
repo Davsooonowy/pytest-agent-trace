@@ -17,6 +17,15 @@ from agent_test.core.trace import AgentTrace
 RecordMode = Literal["none", "once", "all"]
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "agent_cassette(path): auto-load the given cassette path into the agent_cassette "
+        "fixture before the test body runs — equivalent to calling agent_cassette.load(path) "
+        "as the first line of the test yourself.",
+    )
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("agent-trace")
     group.addoption(
@@ -114,7 +123,11 @@ class AgentCassetteFixture:
 
 @pytest.fixture
 def agent_cassette(request: pytest.FixtureRequest) -> AgentCassetteFixture:
-    return AgentCassetteFixture(
+    fixture = AgentCassetteFixture(
         record_mode=request.config.getoption("--record-mode"),
         diff_baseline=request.config.getoption("--agent-diff-baseline"),
     )
+    marker = request.node.get_closest_marker("agent_cassette")
+    if marker is not None:
+        fixture.load(marker.args[0])
+    return fixture

@@ -171,3 +171,44 @@ def test_record_mode_once_replays_when_cassette_already_exists(pytester):
     )
     result = pytester.runpytest("--record-mode=once")
     result.assert_outcomes(passed=1)
+
+
+def test_agent_cassette_marker_auto_loads_before_the_test_runs(pytester):
+    pytester.makepyfile(
+        f"""
+        import pytest
+
+        @pytest.mark.agent_cassette(r"{CASSETTE}")
+        def test_marked(agent_cassette):
+            assert agent_cassette.trace is not None
+            assert agent_cassette.trace.final_output == "W Warszawie jest 18 stopni"
+            agent_cassette.assert_matches("W Warszawie jest 18 stopni")
+        """
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_agent_cassette_marker_is_registered_no_unknown_marker_warning(pytester):
+    pytester.makepyfile(
+        f"""
+        import pytest
+
+        @pytest.mark.agent_cassette(r"{CASSETTE}")
+        def test_marked(agent_cassette):
+            pass
+        """
+    )
+    result = pytester.runpytest("--strict-markers")
+    result.assert_outcomes(passed=1)
+
+
+def test_without_marker_trace_is_none_until_load_is_called(pytester):
+    pytester.makepyfile(
+        """
+        def test_unmarked(agent_cassette):
+            assert agent_cassette.trace is None
+        """
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
