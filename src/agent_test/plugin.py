@@ -44,22 +44,52 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Diff the current trajectory against the stored baseline cassette (regression check).",
     )
+    group.addoption(
+        "--agent-cassette-dir",
+        default=None,
+        help=(
+            "Base directory relative cassette paths are resolved against "
+            "(overrides the agent_cassette_dir ini option for this run)."
+        ),
+    )
+    parser.addini(
+        "agent_cassette_dir",
+        help="Default base directory relative cassette paths are resolved against.",
+        default=None,
+    )
 
 
 class AgentCassetteFixture:
     """Handle exposed as the `agent_cassette` fixture inside tests."""
 
-    def __init__(self, record_mode: RecordMode, diff_baseline: bool) -> None:
+    def __init__(
+        self,
+        record_mode: RecordMode,
+        diff_baseline: bool,
+        cassette_dir: str | Path | None = None,
+    ) -> None:
         self.record_mode = record_mode
         self.diff_baseline = diff_baseline
+        self.cassette_dir = Path(cassette_dir) if cassette_dir else None
         # "all" is unambiguous without knowing the path yet; "once" gets
         # refined in load() once we know whether the cassette already exists.
         self.record = record_mode == "all"
         self.trace: AgentTrace | None = None
         self._path: Path | None = None
 
+    def _resolve(self, path: str | Path) -> Path:
+        path = Path(path)
+        if self.cassette_dir is not None and not path.is_absolute():
+            return self.cassette_dir / path
+        return path
+
     def load(self, path: str | Path) -> AgentTrace | None:
         """Point the fixture at a cassette location.
+
+        A relative `path` is resolved against `cassette_dir` (set via
+        `--agent-cassette-dir` or the `agent_cassette_dir` ini option) if
+        one is configured; otherwise it's relative to the current directory,
+        same as always.
 
         In replay mode (the default), reads it immediately. In record mode
         there's usually nothing to read yet — that's the point of recording
@@ -67,7 +97,7 @@ class AgentCassetteFixture:
         another framework's `record_*` once it exists) to actually run the
         agent and populate `self.trace`.
         """
-        self._path = Path(path)
+        self._path = self._resolve(path)
         if self.record_mode == "once":
             self.record = not self._path.exists()
         if self.record:
@@ -114,7 +144,7 @@ class AgentCassetteFixture:
         assert self.trace is not None, (
             "call agent_cassette.load(...) before diff_against_baseline(...)"
         )
-        baseline_trace = AgentTrace.from_cassette(baseline_path)
+        baseline_trace = AgentTrace.from_cassette(self._resolve(baseline_path))
         diff = diff_trajectories(baseline_trace, self.trace)
         if self.diff_baseline and diff.is_significant:
             raise AssertionError(diff.render())
@@ -123,9 +153,13 @@ class AgentCassetteFixture:
 
 @pytest.fixture
 def agent_cassette(request: pytest.FixtureRequest) -> AgentCassetteFixture:
+    cassette_dir = request.config.getoption("--agent-cassette-dir") or request.config.getini(
+        "agent_cassette_dir"
+    )
     fixture = AgentCassetteFixture(
         record_mode=request.config.getoption("--record-mode"),
         diff_baseline=request.config.getoption("--agent-diff-baseline"),
+        cassette_dir=cassette_dir or None,
     )
     marker = request.node.get_closest_marker("agent_cassette")
     if marker is not None:

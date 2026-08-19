@@ -212,3 +212,55 @@ def test_without_marker_trace_is_none_until_load_is_called(pytester):
     )
     result = pytester.runpytest()
     result.assert_outcomes(passed=1)
+
+
+def test_cassette_dir_cli_option_resolves_relative_paths(pytester):
+    cassette_dir = pytester.path / "cassettes"
+    cassette_dir.mkdir()
+    (cassette_dir / "weather.jsonl").write_text(
+        CASSETTE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    pytester.makepyfile(
+        """
+        def test_relative(agent_cassette):
+            trace = agent_cassette.load("weather.jsonl")
+            assert trace.final_output == "W Warszawie jest 18 stopni"
+        """
+    )
+    result = pytester.runpytest(f"--agent-cassette-dir={cassette_dir}")
+    result.assert_outcomes(passed=1)
+
+
+def test_cassette_dir_ini_option_resolves_relative_paths(pytester):
+    cassette_dir = pytester.path / "cassettes"
+    cassette_dir.mkdir()
+    (cassette_dir / "weather.jsonl").write_text(
+        CASSETTE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    pytester.makeini(f"[pytest]\nagent_cassette_dir = {cassette_dir}\n")
+
+    pytester.makepyfile(
+        """
+        def test_relative(agent_cassette):
+            trace = agent_cassette.load("weather.jsonl")
+            assert trace.final_output == "W Warszawie jest 18 stopni"
+        """
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_absolute_path_bypasses_cassette_dir(pytester):
+    unrelated_dir = pytester.path / "cassettes"
+    unrelated_dir.mkdir()
+
+    pytester.makepyfile(
+        f"""
+        def test_absolute(agent_cassette):
+            trace = agent_cassette.load(r"{CASSETTE}")
+            assert trace.final_output == "W Warszawie jest 18 stopni"
+        """
+    )
+    result = pytester.runpytest(f"--agent-cassette-dir={unrelated_dir}")
+    result.assert_outcomes(passed=1)
