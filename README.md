@@ -40,8 +40,8 @@ def test_weather_agent(agent_cassette):
 ```
 
 ```bash
-pytest --record   # runs the real agent once, writes cassettes/weather.jsonl
-pytest             # every run after: replays from disk, no API calls, no cost
+pytest --record-mode=once   # cassette missing: runs the real agent, writes cassettes/weather.jsonl
+pytest --record-mode=once   # cassette exists: replays it instead, no API calls, no cost
 ```
 
 ## Install
@@ -55,7 +55,7 @@ The distribution is `pytest-agent-trace`; the package you import is `agent_test`
 ## How it works
 
 ```
-pytest plugin (agent_cassette fixture, --record / --agent-diff-baseline)
+pytest plugin (agent_cassette fixture, --record-mode / --agent-diff-baseline)
         │
 assertion library (assert_trajectory, assert_resilience)
         │

@@ -7,21 +7,27 @@ same pattern pytest-recording/vcr-langchain use for their `vcr` fixture.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
 from agent_test.core.diff import TrajectoryDiff, diff_trajectories
 from agent_test.core.trace import AgentTrace
 
+RecordMode = Literal["none", "once", "all"]
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("agent-trace")
     group.addoption(
-        "--record",
-        action="store_true",
-        default=False,
-        help="Record a fresh cassette against the real agent/LLM instead of replaying.",
+        "--record-mode",
+        choices=["none", "once", "all"],
+        default="none",
+        help=(
+            "none (default): only replay, never run the real agent. "
+            "once: run the real agent and record only if the cassette doesn't exist yet, "
+            "otherwise replay it. all: always run the real agent and overwrite the cassette."
+        ),
     )
     group.addoption(
         "--agent-diff-baseline",
@@ -34,22 +40,27 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 class AgentCassetteFixture:
     """Handle exposed as the `agent_cassette` fixture inside tests."""
 
-    def __init__(self, record: bool, diff_baseline: bool) -> None:
-        self.record = record
+    def __init__(self, record_mode: RecordMode, diff_baseline: bool) -> None:
+        self.record_mode = record_mode
         self.diff_baseline = diff_baseline
+        # "all" is unambiguous without knowing the path yet; "once" gets
+        # refined in load() once we know whether the cassette already exists.
+        self.record = record_mode == "all"
         self.trace: AgentTrace | None = None
         self._path: Path | None = None
 
     def load(self, path: str | Path) -> AgentTrace | None:
         """Point the fixture at a cassette location.
 
-        In replay mode (the default), reads it immediately. In `--record`
-        mode there's usually nothing to read yet — that's the point of
-        recording — so this only remembers the path; call `record_langgraph`
-        (or another framework's `record_*` once it exists) to actually run
-        the agent and populate `self.trace`.
+        In replay mode (the default), reads it immediately. In record mode
+        there's usually nothing to read yet — that's the point of recording
+        — so this only remembers the path; call `record_langgraph` (or
+        another framework's `record_*` once it exists) to actually run the
+        agent and populate `self.trace`.
         """
         self._path = Path(path)
+        if self.record_mode == "once":
+            self.record = not self._path.exists()
         if self.record:
             self.trace = None
             return None
@@ -104,6 +115,6 @@ class AgentCassetteFixture:
 @pytest.fixture
 def agent_cassette(request: pytest.FixtureRequest) -> AgentCassetteFixture:
     return AgentCassetteFixture(
-        record=request.config.getoption("--record"),
+        record_mode=request.config.getoption("--record-mode"),
         diff_baseline=request.config.getoption("--agent-diff-baseline"),
     )
