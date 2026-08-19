@@ -44,7 +44,7 @@ pytest --record-mode=once   # cassette missing: runs the real agent, writes cass
 pytest --record-mode=once   # cassette exists: replays it instead, no API calls, no cost
 ```
 
-`agent_cassette.load(...)` can also be written as `@pytest.mark.agent_cassette("cassettes/weather.jsonl")` on the test function — the fixture arrives already loaded.
+`agent_cassette.load(...)` can also be written as `@pytest.mark.agent_cassette("cassettes/weather.jsonl")` on the test function — the fixture arrives already loaded. Relative cassette paths resolve against `--agent-cassette-dir` (or the `agent_cassette_dir` ini option) if either is set, so tests don't need to repeat `cassettes/` everywhere.
 
 ## Install
 
