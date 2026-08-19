@@ -1,15 +1,14 @@
 """Trajectory diff engine — baseline vs new-run regression detection.
 
-"Smart noise ignoring" (description.md's reality-check section): changes in
-*what tools were actually called and with what args* are `significant` —
-that's the part of a trajectory that actually defines behavior, so it fails
-a `--agent-diff-baseline` run. Changes in the LLM's response text or the
-final answer's wording are `informational` — shown in the report so nothing
-is hidden, but they don't fail the test on their own, because they're
-expected to vary even when nothing meaningfully broke (temperature > 0,
-minor prompt rewording, a model bump). A tool being added/removed/reordered,
-or called with different arguments, is never "just wording" — so those stay
-strict with no fuzzy opt-out.
+Changes in *what tools were actually called and with what args* are
+`significant` — that's the part of a trajectory that actually defines
+behavior, so it fails a `--agent-diff-baseline` run. Changes in the LLM's
+response text or the final answer's wording are `informational` — shown in
+the report so nothing is hidden, but they don't fail the test on their own,
+because that text is expected to vary even when nothing meaningfully broke
+(temperature > 0, minor prompt rewording, a model bump). A tool being
+added/removed/reordered, or called with different arguments, is never "just
+wording" — so those stay strict with no fuzzy opt-out.
 """
 
 from __future__ import annotations

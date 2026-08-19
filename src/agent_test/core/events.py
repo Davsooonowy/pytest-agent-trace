@@ -1,7 +1,8 @@
 """Cassette event schema.
 
-Kaseta to append-only strumień zdarzeń (JSONL) — jeden event = jedna linia.
-Nowy typ zdarzenia to nowy wariant tej unii, nie migracja istniejących kaset.
+A cassette is an append-only stream of events (JSONL) — one event per line.
+A new event type is a new variant of this union, not a migration of every
+cassette already recorded.
 """
 
 from __future__ import annotations
@@ -56,10 +57,3 @@ AgentEvent = Annotated[
     RunStarted | LLMCall | ToolCall | RunFinished,
     Field(discriminator="type"),
 ]
-
-EVENT_TYPES: dict[str, type[BaseModel]] = {
-    "run_started": RunStarted,
-    "llm_call": LLMCall,
-    "tool_call": ToolCall,
-    "run_finished": RunFinished,
-}

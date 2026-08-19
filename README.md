@@ -50,7 +50,7 @@ pytest             # every run after: replays from disk, no API calls, no cost
 pip install "pytest-agent-trace[langgraph]"
 ```
 
-The distribution is `pytest-agent-trace`; the package you import is `agent_test`. The pytest plugin registers itself automatically via the `pytest11` entry point — no `conftest.py` wiring needed.
+`[langgraph]` is a pip "extra" — it pulls in `langchain-core`/`langgraph` alongside the base package, since those are only needed if you're actually recording/replaying a LangGraph agent. The distribution is `pytest-agent-trace`; the package you import is `agent_test`. The pytest plugin registers itself automatically via the `pytest11` entry point — no `conftest.py` wiring needed.
 
 ## How it works
 
@@ -78,7 +78,7 @@ A cassette is not a nested blob of JSON — it's one event per line:
 
 That's deliberate: a new event type is a new variant, not a migration of every cassette you've already recorded; `git diff` on two cassettes reads line by line instead of re-indenting a whole tree; and replaying from a checkpoint is a fold over a prefix of events instead of a full-tree parse.
 
-Recording hooks into LangGraph's own `astream_events` stream rather than subclassing `BaseCallbackHandler` — the same choice [langchain-replay](https://github.com/sixty-north/langchain-replay) made, for the same reason: callback internals get restructured between LangGraph minor versions, `astream_events` doesn't. Replay works by swapping out the model's and tools' leaf methods (`_generate`/`_run`) for ones that answer from the cassette in order — the outer tracing and message-wrapping machinery stays untouched, so a replayed run is indistinguishable from a live one to everything downstream, including this project's own diff and chaos tooling.
+Recording hooks into LangGraph's own `astream_events` stream rather than subclassing `BaseCallbackHandler`, since callback internals get restructured between LangGraph minor versions and `astream_events` doesn't. Replay works by swapping out the model's and tools' leaf methods (`_generate`/`_run`) for ones that answer from the cassette in order — the outer tracing and message-wrapping machinery stays untouched, so a replayed run is indistinguishable from a live one to everything downstream, including this project's own diff and chaos tooling. The core (`core/trace.py`, `core/assertions.py`, `core/diff.py`, `core/chaos.py`, `core/resilience.py`) never imports a LangGraph object directly — everything framework-specific lives in `adapters/langgraph.py`.
 
 ## Trajectory assertions
 
@@ -142,37 +142,6 @@ Fault injection wraps the real tool, on purpose — it does not go through the c
 agent-trace show cassettes/weather.jsonl        # print a cassette's event timeline
 agent-trace diff baseline.jsonl current.jsonl   # diff two cassettes outside pytest
 ```
-
-## Framework support
-
-| Framework | Status |
-|---|---|
-| LangGraph / LangChain | Recorder, replay, diff, chaos — all working |
-| CrewAI | Planned (`adapters/crewai.py` is a stub) |
-| Pydantic AI | Planned |
-
-The core (`core/trace.py`, `core/assertions.py`, `core/diff.py`, `core/chaos.py`, `core/resilience.py`) never imports a framework-specific object directly — everything framework-specific lives in one adapter file per framework. Adding a new framework is adding a new file, not touching the core.
-
-## Where this sits next to existing tools
-
-| Tool | What it does | What it doesn't |
-|---|---|---|
-| [VCR.py](https://github.com/kevin1024/vcrpy) / [pytest-recording](https://github.com/kiwicom/pytest-recording) | HTTP-level cassette recording | Records the raw request/response, not the decision — the tool call never actually runs against a replay |
-| [langchain-replay](https://github.com/sixty-north/langchain-replay) | Records the LLM's decision, re-executes real tool code on replay | Locked to LangChain, no diff engine, no chaos library, no other frameworks |
-| [pytest-evals](https://github.com/AlmogBaku/pytest-evals) | Dataset-driven eval scoring, tracked over time | Scores the final answer, not the steps that produced it |
-
-`pytest-agent-trace` sits at the intersection: a framework-agnostic core, a diff engine as a first-class feature rather than something you script yourself, and an installable chaos scenario library instead of one hand-written example in a blog post.
-
-## Status
-
-The core pipeline — record, replay, trajectory assertions, diff engine, chaos engineering, pytest plugin — is built and tested (see `tests/`). Still open:
-
-- Fuzzy/semantic assertions (`tool_called_with_fuzzy_args`, similarity-threshold matching) — the `fuzzy` extra is wired into `pyproject.toml`, the API isn't built yet.
-- `adapters/crewai.py` and a Pydantic AI adapter.
-- A trajectory visualizer GUI (the cassette format already carries `duration_ms`/`status` per event for this).
-- CI.
-
-Issues and PRs welcome.
 
 ## Development
 

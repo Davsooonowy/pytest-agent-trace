@@ -172,14 +172,8 @@ class LangGraphRecorder:
                 last_seq = seq
 
             elif kind == "on_tool_error":
-                # A tool that *raises* (rather than returning an error value)
-                # fires this instead of on_tool_end — even when the graph's
-                # ToolNode has handle_tool_errors=True and goes on to convert
-                # the exception into an error ToolMessage for the agent's own
-                # conversation state. Without handling this event, a raised
-                # exception (e.g. from chaos.ChaosScenario.timeout) simply
-                # vanishes from the cassette instead of showing up as a
-                # failed tool_call.
+                # Raised exceptions surface here, not on_tool_end — see the
+                # module docstring for why this branch has to exist at all.
                 error = event["data"].get("error")
                 seq = writer.next_seq()
                 writer.append(
@@ -227,10 +221,10 @@ class LangGraphReplayer:
 
     Matching is sequential/index-based: the Nth `arecord`ed llm_call answers
     the Nth model invocation, the Nth tool_call answers the Nth call to that
-    tool, regardless of the live prompt/args. This is the simplest strategy
-    and the one `langchain-replay` validated in a real implementation (see
-    project notes) — a stricter hash/semantic match can be layered on later
-    as an opt-in, but sequential is the correct default.
+    tool, regardless of the live prompt/args. This is the simplest strategy,
+    and the one `langchain-replay` validated in a real implementation — a
+    stricter hash/semantic match can be layered on later as an opt-in, but
+    sequential is the correct default.
     """
 
     def __init__(self, trace: AgentTrace) -> None:
