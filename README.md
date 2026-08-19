@@ -82,6 +82,29 @@ That's deliberate: a new event type is a new variant, not a migration of every c
 
 Recording hooks into LangGraph's own `astream_events` stream rather than subclassing `BaseCallbackHandler`, since callback internals get restructured between LangGraph minor versions and `astream_events` doesn't. Replay works by swapping out the model's and tools' leaf methods (`_generate`/`_run`) for ones that answer from the cassette in order — the outer tracing and message-wrapping machinery stays untouched, so a replayed run is indistinguishable from a live one to everything downstream, including this project's own diff and chaos tooling. The core (`core/trace.py`, `core/assertions.py`, `core/diff.py`, `core/chaos.py`, `core/resilience.py`) never imports a LangGraph object directly — everything framework-specific lives in `adapters/langgraph.py`.
 
+## Recorded against a real model
+
+The cassette above is hand-written for clarity. This one isn't — it's an unedited recording of a local [Ollama](https://ollama.com) `llama3.2:3b` actually deciding, on its own, to call a tool:
+
+```python
+from f1_agent import build_f1_agent
+from agent_test.adapters.langgraph import LangGraphRecorder
+
+agent = build_f1_agent()  # a real ChatOllama model, bound to a real tool
+LangGraphRecorder(agent.graph, "f1.cassette.jsonl").record(
+    {"messages": [("user", "Who won the F1 drivers championship in 2024?")]}
+)
+```
+
+```jsonl
+{"type":"llm_call","response":"","tool_calls":[{"name":"get_f1_standings","args":{"season":2024}}],"model":"llama3.2:3b","duration_ms":9300}
+{"type":"tool_call","tool":"get_f1_standings","args":{"season":2024},"result":{"standings":[{"position":1,"driver":"Max Verstappen","points":437}, ...]}}
+{"type":"llm_call","response":"Max Verstappen won the F1 drivers championship in 2024.","duration_ms":12975}
+{"type":"run_finished","final_output":"Max Verstappen won the F1 drivers championship in 2024."}
+```
+
+No prompt engineering, no hardcoded response list — the model decided to call `get_f1_standings(season=2024)` before it would answer. That recording lives in `examples/f1_standings.cassette.jsonl` and takes ~22 seconds against the real model, entirely on CPU, zero API key, zero cost. Replaying it back — `LangGraphReplayer.from_cassette(...)`, same as the weather example — is instant, and `tests/test_f1_agent.py` asserts against it on every run without needing Ollama installed at all.
+
 ## Trajectory assertions
 
 ```python

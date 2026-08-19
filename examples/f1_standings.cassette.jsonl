@@ -1,0 +1,5 @@
+{"seq":1,"type":"run_started","run_id":"d66ccc50732a","parent_seq":null,"input":{"messages":[["user","Who won the F1 drivers championship in 2024?"]]}}
+{"seq":2,"type":"llm_call","run_id":"d66ccc50732a","parent_seq":1,"prompt_hash":"434d781b1a5f","response":"","tool_calls":[{"name":"get_f1_standings","args":{"season":2024},"id":"ded4128e-ab72-4540-a538-126eb6dbe330","type":"tool_call"}],"model":"llama3.2:3b","duration_ms":9300,"status":"ok"}
+{"seq":3,"type":"tool_call","run_id":"d66ccc50732a","parent_seq":2,"tool":"get_f1_standings","args":{"season":2024},"result":{"season":2024,"standings":[{"position":1,"driver":"Max Verstappen","points":437},{"position":2,"driver":"Lando Norris","points":374},{"position":3,"driver":"Charles Leclerc","points":356}]},"duration_ms":5,"status":"ok"}
+{"seq":4,"type":"llm_call","run_id":"d66ccc50732a","parent_seq":3,"prompt_hash":"78dba133d1ac","response":"Max Verstappen won the F1 drivers championship in 2024.","tool_calls":null,"model":"llama3.2:3b","duration_ms":12975,"status":"ok"}
+{"seq":5,"type":"run_finished","run_id":"d66ccc50732a","parent_seq":4,"final_output":"Max Verstappen won the F1 drivers championship in 2024."}
