@@ -1,9 +1,8 @@
 """Fluent trajectory assertions.
 
-Testujemy proces (kolejność/argumenty wywołań narzędzi, liczbę kroków LLM),
-nie tylko finalny output. Każda metoda zwraca `self`, więc wywołania się
-łańcuchują i każde niepowodzenie ujawnia dokładnie, który krok trajektorii
-nie zgadza się z oczekiwaniem.
+Checks the process — tool call order/arguments, number of LLM steps — not
+just the final output. Each method returns `self`, so calls chain, and each
+failure states exactly which step in the trajectory didn't match.
 """
 
 from __future__ import annotations
