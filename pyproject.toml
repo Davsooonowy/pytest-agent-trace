@@ -12,6 +12,11 @@ dependencies = [
     "pytest>=8.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Davsooonowy/pytest-agent-trace"
+Repository = "https://github.com/Davsooonowy/pytest-agent-trace"
+Issues = "https://github.com/Davsooonowy/pytest-agent-trace/issues"
+
 [project.optional-dependencies]
 langgraph = [
     "langchain-core>=1.0",
@@ -35,6 +40,11 @@ agent-trace = "agent_test.cli:app"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build]
+exclude = [
+    ".idea",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_test"]
