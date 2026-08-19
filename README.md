@@ -44,6 +44,8 @@ pytest --record-mode=once   # cassette missing: runs the real agent, writes cass
 pytest --record-mode=once   # cassette exists: replays it instead, no API calls, no cost
 ```
 
+`agent_cassette.load(...)` can also be written as `@pytest.mark.agent_cassette("cassettes/weather.jsonl")` on the test function — the fixture arrives already loaded.
+
 ## Install
 
 ```bash
