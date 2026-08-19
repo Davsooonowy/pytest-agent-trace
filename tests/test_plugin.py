@@ -34,11 +34,12 @@ def test_record_and_diff_flags_are_registered(pytester):
     pytester.makepyfile(
         """
         def test_flags(agent_cassette):
+            assert agent_cassette.record_mode == "all"
             assert agent_cassette.record is True
             assert agent_cassette.diff_baseline is True
         """
     )
-    result = pytester.runpytest("--record", "--agent-diff-baseline")
+    result = pytester.runpytest("--record-mode=all", "--agent-diff-baseline")
     result.assert_outcomes(passed=1)
 
 
@@ -108,7 +109,7 @@ def test_record_langgraph_actually_runs_and_records(pytester):
             assert agent_cassette.trace.final_output == "W Warszawie jest 18 stopni"
         """
     )
-    result = pytester.runpytest("--record")
+    result = pytester.runpytest("--record-mode=all")
     result.assert_outcomes(passed=1)
 
     cassette = pytester.path / "recorded.cassette.jsonl"
@@ -128,4 +129,45 @@ def test_without_record_flag_load_replays_immediately(pytester):
         """
     )
     result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_record_mode_once_records_when_cassette_is_missing(pytester):
+    pytest.importorskip("langgraph")
+    pytester.makepyfile(
+        """
+        from weather_agent import build_weather_agent
+
+        def test_once(agent_cassette):
+            agent = build_weather_agent()
+            agent_cassette.load("fresh.cassette.jsonl")
+            assert agent_cassette.record is True
+
+            if agent_cassette.record:
+                agent_cassette.record_langgraph(
+                    agent.graph, {"messages": [("user", "Jaka jest pogoda w Warszawie?")]}
+                )
+
+            assert agent_cassette.trace.final_output == "W Warszawie jest 18 stopni"
+        """
+    )
+    result = pytester.runpytest("--record-mode=once")
+    result.assert_outcomes(passed=1)
+    assert (pytester.path / "fresh.cassette.jsonl").exists()
+
+
+def test_record_mode_once_replays_when_cassette_already_exists(pytester):
+    existing = pytester.path / "existing.cassette.jsonl"
+    existing.write_text(CASSETTE.read_text(encoding="utf-8"), encoding="utf-8")
+
+    pytester.makepyfile(
+        """
+        def test_once(agent_cassette):
+            trace = agent_cassette.load("existing.cassette.jsonl")
+            assert agent_cassette.record is False
+            assert trace is not None
+            assert trace.final_output == "W Warszawie jest 18 stopni"
+        """
+    )
+    result = pytester.runpytest("--record-mode=once")
     result.assert_outcomes(passed=1)
