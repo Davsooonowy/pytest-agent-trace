@@ -20,6 +20,21 @@ from agent_test.core.trace import AgentTrace
 
 Severity = Literal["significant", "informational"]
 
+# Below this, a latency/token-count difference is normal run-to-run jitter,
+# not something worth a report line. Deliberately not a CLI flag: richness
+# here follows from whatever the cassette actually recorded, not from a
+# runtime mode - so this only ever adds informational entries, never a
+# reason to fail a build.
+_NOTABLE_RELATIVE_CHANGE = 0.5
+
+
+def _notably_changed(before: int | None, after: int | None) -> bool:
+    if before is None or after is None:
+        return False
+    if before == 0:
+        return after != 0
+    return abs(after - before) / before >= _NOTABLE_RELATIVE_CHANGE
+
 
 @dataclass
 class DiffEntry:
@@ -69,22 +84,33 @@ def diff_trajectories(baseline: AgentTrace, current: AgentTrace) -> TrajectoryDi
                     "significant", f'Step {step}: new tool call "{after.tool}" (not in baseline)'
                 )
             )
-        elif after is None:
+            continue
+        if after is None:
             diff.entries.append(
                 DiffEntry(
                     "significant",
                     f'Step {step}: tool call "{before.tool}" is missing (was in baseline)',
                 )
             )
-        elif before.tool != after.tool:
+            continue
+        if before.tool != after.tool:
             diff.entries.append(
                 DiffEntry("significant", f'Step {step}: tool "{before.tool}" → tool "{after.tool}"')
             )
-        elif before.args != after.args:
+            continue
+        if before.args != after.args:
             diff.entries.append(
                 DiffEntry(
                     "significant",
                     f'Step {step}: tool "{before.tool}" args changed: {before.args} → {after.args}',
+                )
+            )
+        if _notably_changed(before.duration_ms, after.duration_ms):
+            diff.entries.append(
+                DiffEntry(
+                    "informational",
+                    f'Step {step}: tool "{before.tool}" latency changed: '
+                    f"{before.duration_ms}ms → {after.duration_ms}ms",
                 )
             )
 
@@ -99,12 +125,29 @@ def diff_trajectories(baseline: AgentTrace, current: AgentTrace) -> TrajectoryDi
         )
     else:
         for i, (before_llm, after_llm) in enumerate(zip(baseline_llm, current_llm, strict=True)):
+            step = i + 1
             if before_llm.response != after_llm.response:
                 diff.entries.append(
                     DiffEntry(
                         "informational",
-                        f"Step {i + 1}: LLM response text changed: "
+                        f"Step {step}: LLM response text changed: "
                         f"{before_llm.response!r} → {after_llm.response!r}",
+                    )
+                )
+            if _notably_changed(before_llm.duration_ms, after_llm.duration_ms):
+                diff.entries.append(
+                    DiffEntry(
+                        "informational",
+                        f"Step {step}: LLM call latency changed: "
+                        f"{before_llm.duration_ms}ms → {after_llm.duration_ms}ms",
+                    )
+                )
+            if _notably_changed(before_llm.total_tokens, after_llm.total_tokens):
+                diff.entries.append(
+                    DiffEntry(
+                        "informational",
+                        f"Step {step}: LLM call token usage changed: "
+                        f"{before_llm.total_tokens} → {after_llm.total_tokens} total tokens",
                     )
                 )
 

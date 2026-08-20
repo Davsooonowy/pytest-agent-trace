@@ -31,6 +31,12 @@ class LLMCall(BaseModel):
     model: str | None = None
     duration_ms: int | None = None
     status: Literal["ok", "error"] = "ok"
+    # Populated from the AIMessage's `usage_metadata` when the provider
+    # reports it (OpenAI, Anthropic, Ollama, ... all do via LangChain's
+    # standard UsageMetadata) - None when it isn't available.
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
 
 
 class ToolCall(BaseModel):
