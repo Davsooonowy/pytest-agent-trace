@@ -7,11 +7,24 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      - id: release
+        uses: googleapis/release-please-action@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      # release-please creates the GitHub Release with the default GITHUB_TOKEN,
+      # and GitHub doesn't let a GITHUB_TOKEN-triggered event start another
+      # workflow run (to avoid accidental infinite loops) — so publish.yml's
+      # `on: release: published` never fires on its own. Dispatch it explicitly
+      # instead; an explicit workflow_dispatch call isn't subject to that limit.
+      - name: Trigger PyPI publish
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run publish.yml --repo ${{ github.repository }}
