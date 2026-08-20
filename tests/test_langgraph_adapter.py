@@ -4,9 +4,10 @@ import pytest
 
 pytest.importorskip("langgraph")
 
+from langchain_core.tools import tool  # noqa: E402
 from weather_agent import build_weather_agent  # noqa: E402
 
-from agent_test import AgentTrace, assert_trajectory  # noqa: E402
+from agent_test import AgentTrace, Redactor, assert_trajectory  # noqa: E402
 from agent_test.adapters.langgraph import LangGraphRecorder  # noqa: E402
 
 
@@ -48,3 +49,24 @@ def test_cassette_is_plain_jsonl_lines(tmp_path: Path):
     assert len(lines) == 5
     assert '"type":"run_started"' in lines[0]
     assert '"type":"run_finished"' in lines[-1]
+
+
+@tool
+def get_contact_info(city: str) -> dict:
+    """Return contact info for the city's tourism office."""
+    return {"email": "contact@example.com", "city": city}
+
+
+def test_redactor_scrubs_sensitive_values_before_they_hit_disk(tmp_path: Path):
+    agent = build_weather_agent(tool=get_contact_info)
+    cassette_path = tmp_path / "contact.cassette.jsonl"
+    recorder = LangGraphRecorder(agent.graph, str(cassette_path), redactor=Redactor())
+
+    run_id = recorder.record({"messages": [("user", "Jaka jest pogoda w Warszawie?")]})
+
+    raw_cassette = cassette_path.read_text(encoding="utf-8")
+    assert "contact@example.com" not in raw_cassette
+    assert "[REDACTED_EMAIL]" in raw_cassette
+
+    trace = AgentTrace.from_cassette(cassette_path, run_id=run_id)
+    assert trace.tool_calls[0].result == {"email": "[REDACTED_EMAIL]", "city": "Warszawa"}

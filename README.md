@@ -136,6 +136,19 @@ Trajectory changed vs baseline:
 
 Tool-call structure — a tool added, removed, renamed, or called with different arguments — is *significant* and fails the run. Wording differences in the model's own text or the final answer, and latency/token-usage drift (when the provider reports token counts), are *informational*: shown so nothing is hidden, but never failing the build on their own, because those numbers are expected to vary run to run even when nothing actually broke.
 
+## Redaction
+
+Cassettes get committed to git — a tool result or LLM response that happens to contain an email, an API key, or a credit-card-looking number shouldn't sit in plaintext in your repo's history forever. Opt in at record time:
+
+```python
+from agent_test import Redactor
+from agent_test.adapters.langgraph import LangGraphRecorder
+
+LangGraphRecorder(agent.graph, "cassettes/weather.jsonl", redactor=Redactor()).record(...)
+```
+
+`Redactor` scrubs known-sensitive shapes (emails, API keys, card numbers) out of every string it finds, and blanks any dict value whose key is named like a secret (`api_key`, `password`, `token`, ...) regardless of what the value looks like. Off by default — recording is exact, byte for byte, unless you turn it on.
+
 ## Chaos engineering
 
 Everyone finds out how their agent handles a broken tool call in production. `pytest-agent-trace` lets you find out first:
