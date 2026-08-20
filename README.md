@@ -15,36 +15,49 @@ That throws away the part that actually breaks in production. An agent that call
 
 ## Quickstart
 
+No mocked model, no scripted response list — a real, local [Ollama](https://ollama.com) `llama3.2:3b` deciding, on its own, whether to call a tool. No API key, no cloud, no cost:
+
 ```python
 from agent_test import assert_trajectory
 
 
-def test_weather_agent(agent_cassette):
-    from weather_agent import build_weather_agent
+def test_f1_agent(agent_cassette):
+    from f1_agent import build_f1_agent
 
-    agent = build_weather_agent()
-    agent_cassette.load("cassettes/weather.jsonl")
+    agent = build_f1_agent()  # a real ChatOllama, bound to a real tool
+    agent_cassette.load("cassettes/f1_standings.jsonl")
 
     if agent_cassette.record:
         agent_cassette.record_langgraph(
-            agent.graph, {"messages": [("user", "What's the weather in Warsaw?")]}
+            agent.graph,
+            {"messages": [("user", "Who won the F1 drivers championship in 2024?")]},
         )
 
     (
         assert_trajectory(agent_cassette.trace)
-        .tool_called("get_weather", times=1)
-        .tool_called_with("get_weather", city="Warsaw")
-        .tool_not_called("send_email")
-        .final_output_contains("18")
+        .tool_called("get_f1_standings", times=1)
+        .tool_called_with("get_f1_standings", season=2024)
+        .final_output_contains("Verstappen")
     )
 ```
 
 ```bash
-pytest --record-mode=once   # cassette missing: runs the real agent, writes cassettes/weather.jsonl
+pytest --record-mode=once   # cassette missing: runs the real model (~20s on CPU), writes cassettes/f1_standings.jsonl
 pytest --record-mode=once   # cassette exists: replays it instead, no API calls, no cost
 ```
 
-`agent_cassette.load(...)` can also be written as `@pytest.mark.agent_cassette("cassettes/weather.jsonl")` on the test function — the fixture arrives already loaded. Relative cassette paths resolve against `--agent-cassette-dir` (or the `agent_cassette_dir` ini option) if either is set, so tests don't need to repeat `cassettes/` everywhere.
+That first run produces an unedited recording — nothing below is hand-written:
+
+```jsonl
+{"type":"llm_call","response":"","tool_calls":[{"name":"get_f1_standings","args":{"season":2024}}],"model":"llama3.2:3b","duration_ms":9300}
+{"type":"tool_call","tool":"get_f1_standings","args":{"season":2024},"result":{"standings":[{"position":1,"driver":"Max Verstappen","points":437}, ...]}}
+{"type":"llm_call","response":"Max Verstappen won the F1 drivers championship in 2024.","duration_ms":12975}
+{"type":"run_finished","final_output":"Max Verstappen won the F1 drivers championship in 2024."}
+```
+
+That exact recording is committed as `examples/f1_standings.cassette.jsonl`, so cloning the repo and running its tests never needs Ollama installed at all — `tests/test_f1_agent.py` replays it on every run, instantly, offline.
+
+`agent_cassette.load(...)` can also be written as `@pytest.mark.agent_cassette("cassettes/f1_standings.jsonl")` on the test function — the fixture arrives already loaded. Relative cassette paths resolve against `--agent-cassette-dir` (or the `agent_cassette_dir` ini option) if either is set, so tests don't need to repeat `cassettes/` everywhere.
 
 ## Install
 
@@ -68,55 +81,31 @@ recorder / replay (adapters/langgraph.py)
 cassette — an append-only JSONL event log
 ```
 
-A cassette is not a nested blob of JSON — it's one event per line:
+A cassette is not a nested blob of JSON — it's one event per line (simplified here; the real one from the Quickstart is above):
 
 ```jsonl
-{"seq": 1, "type": "run_started", "run_id": "r1", "input": {"query": "weather in Warsaw?"}}
-{"seq": 2, "type": "llm_call", "run_id": "r1", "parent_seq": 1, "response": "Let me check the weather"}
-{"seq": 3, "type": "tool_call", "run_id": "r1", "parent_seq": 2, "tool": "get_weather", "args": {"city": "Warsaw"}, "result": {"temp": 18}}
-{"seq": 4, "type": "llm_call", "run_id": "r1", "parent_seq": 3, "response": "It's 18°C in Warsaw"}
-{"seq": 5, "type": "run_finished", "run_id": "r1", "final_output": "It's 18°C in Warsaw"}
+{"seq": 1, "type": "run_started", "run_id": "r1", "input": {"query": "F1 2024 champion?"}}
+{"seq": 2, "type": "llm_call", "run_id": "r1", "parent_seq": 1, "response": "", "tool_calls": [{"name": "get_f1_standings", "args": {"season": 2024}}]}
+{"seq": 3, "type": "tool_call", "run_id": "r1", "parent_seq": 2, "tool": "get_f1_standings", "args": {"season": 2024}, "result": {"standings": ["..."]}}
+{"seq": 4, "type": "llm_call", "run_id": "r1", "parent_seq": 3, "response": "Max Verstappen won it."}
+{"seq": 5, "type": "run_finished", "run_id": "r1", "final_output": "Max Verstappen won it."}
 ```
 
 That's deliberate: a new event type is a new variant, not a migration of every cassette you've already recorded; `git diff` on two cassettes reads line by line instead of re-indenting a whole tree; and replaying from a checkpoint is a fold over a prefix of events instead of a full-tree parse.
 
 Recording hooks into LangGraph's own `astream_events` stream rather than subclassing `BaseCallbackHandler`, since callback internals get restructured between LangGraph minor versions and `astream_events` doesn't. Replay works by swapping out the model's and tools' leaf methods (`_generate`/`_run`) for ones that answer from the cassette in order — the outer tracing and message-wrapping machinery stays untouched, so a replayed run is indistinguishable from a live one to everything downstream, including this project's own diff and chaos tooling. The core (`core/trace.py`, `core/assertions.py`, `core/diff.py`, `core/chaos.py`, `core/resilience.py`) never imports a LangGraph object directly — everything framework-specific lives in `adapters/langgraph.py`.
 
-## Recorded against a real model
-
-The cassette above is hand-written for clarity. This one isn't — it's an unedited recording of a local [Ollama](https://ollama.com) `llama3.2:3b` actually deciding, on its own, to call a tool:
-
-```python
-from f1_agent import build_f1_agent
-from agent_test.adapters.langgraph import LangGraphRecorder
-
-agent = build_f1_agent()  # a real ChatOllama model, bound to a real tool
-LangGraphRecorder(agent.graph, "f1.cassette.jsonl").record(
-    {"messages": [("user", "Who won the F1 drivers championship in 2024?")]}
-)
-```
-
-```jsonl
-{"type":"llm_call","response":"","tool_calls":[{"name":"get_f1_standings","args":{"season":2024}}],"model":"llama3.2:3b","duration_ms":9300}
-{"type":"tool_call","tool":"get_f1_standings","args":{"season":2024},"result":{"standings":[{"position":1,"driver":"Max Verstappen","points":437}, ...]}}
-{"type":"llm_call","response":"Max Verstappen won the F1 drivers championship in 2024.","duration_ms":12975}
-{"type":"run_finished","final_output":"Max Verstappen won the F1 drivers championship in 2024."}
-```
-
-No prompt engineering, no hardcoded response list — the model decided to call `get_f1_standings(season=2024)` before it would answer. That recording lives in `examples/f1_standings.cassette.jsonl` and takes ~22 seconds against the real model, entirely on CPU, zero API key, zero cost. Replaying it back — `LangGraphReplayer.from_cassette(...)`, same as the weather example — is instant, and `tests/test_f1_agent.py` asserts against it on every run without needing Ollama installed at all.
-
 ## Trajectory assertions
 
 ```python
 (
     assert_trajectory(trace)
-    .tool_called("get_weather", times=1)
-    .tool_called_with("get_weather", city="Warsaw")
-    .tool_not_called("send_email")
-    .order(["get_weather", "format_response"])
+    .tool_called("get_f1_standings", times=1)
+    .tool_called_with("get_f1_standings", season=2024)
+    .tool_not_called("place_bet")
     .max_llm_calls(3)
     .max_total_tokens(500)
-    .final_output_contains("18")
+    .final_output_contains("Verstappen")
 )
 ```
 
@@ -130,8 +119,8 @@ pytest --agent-diff-baseline
 
 ```
 Trajectory changed vs baseline:
-  - Step 2: tool "get_weather" → tool "get_weather_v2"
-  ~ Step 3: LLM response text changed: 'Checking now' → 'Let me look that up'
+  - Step 2: tool "get_f1_standings" → tool "get_f1_standings_v2"
+  ~ Step 3: LLM response text changed: 'Let me check' → 'Checking now'
 ```
 
 Tool-call structure — a tool added, removed, renamed, or called with different arguments — is *significant* and fails the run. Wording differences in the model's own text or the final answer, and latency/token-usage drift (when the provider reports token counts), are *informational*: shown so nothing is hidden, but never failing the build on their own, because those numbers are expected to vary run to run even when nothing actually broke.
@@ -144,7 +133,7 @@ Cassettes get committed to git — a tool result or LLM response that happens to
 from agent_test import Redactor
 from agent_test.adapters.langgraph import LangGraphRecorder
 
-LangGraphRecorder(agent.graph, "cassettes/weather.jsonl", redactor=Redactor()).record(...)
+LangGraphRecorder(agent.graph, "cassettes/f1_standings.jsonl", redactor=Redactor()).record(...)
 ```
 
 `Redactor` scrubs known-sensitive shapes (emails, API keys, card numbers) out of every string it finds, and blanks any dict value whose key is named like a secret (`api_key`, `password`, `token`, ...) regardless of what the value looks like. Off by default — recording is exact, byte for byte, unless you turn it on.
@@ -178,7 +167,7 @@ Fault injection wraps the real tool, on purpose — it does not go through the c
 ## CLI
 
 ```bash
-agent-trace show cassettes/weather.jsonl        # print a cassette's event timeline
+agent-trace show cassettes/f1_standings.jsonl   # print a cassette's event timeline
 agent-trace diff baseline.jsonl current.jsonl   # diff two cassettes outside pytest
 ```
 
