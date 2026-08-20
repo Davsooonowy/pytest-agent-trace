@@ -1,5 +1,7 @@
 # pytest-agent-trace
 
+[![Tests](https://github.com/Davsooonowy/pytest-agent-trace/actions/workflows/tests.yml/badge.svg)](https://github.com/Davsooonowy/pytest-agent-trace/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/pytest-agent-trace.svg)](https://pypi.org/project/pytest-agent-trace/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Davsooonowy/pytest-agent-trace/blob/master/LICENSE)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
