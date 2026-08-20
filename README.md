@@ -115,6 +115,7 @@ No prompt engineering, no hardcoded response list — the model decided to call 
     .tool_not_called("send_email")
     .order(["get_weather", "format_response"])
     .max_llm_calls(3)
+    .max_total_tokens(500)
     .final_output_contains("18")
 )
 ```
@@ -133,7 +134,7 @@ Trajectory changed vs baseline:
   ~ Step 3: LLM response text changed: 'Checking now' → 'Let me look that up'
 ```
 
-Tool-call structure — a tool added, removed, renamed, or called with different arguments — is *significant* and fails the run. Wording differences in the model's own text or the final answer are *informational*: shown so nothing is hidden, but never failing the build on their own, because that text is expected to drift run to run even when nothing actually broke.
+Tool-call structure — a tool added, removed, renamed, or called with different arguments — is *significant* and fails the run. Wording differences in the model's own text or the final answer, and latency/token-usage drift (when the provider reports token counts), are *informational*: shown so nothing is hidden, but never failing the build on their own, because those numbers are expected to vary run to run even when nothing actually broke.
 
 ## Chaos engineering
 

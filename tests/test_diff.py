@@ -127,3 +127,68 @@ def test_different_llm_wording_is_informational_only():
     assert diff.entries  # something to report
     assert diff.is_significant is False
     assert all(e.severity == "informational" for e in diff.entries)
+
+
+def _single_tool_call_trace(
+    *, duration_ms: int | None, llm_duration_ms: int | None = None
+) -> AgentTrace:
+    return AgentTrace(
+        [
+            RunStarted(seq=1, run_id="r1", input={}),
+            LLMCall(seq=2, run_id="r1", response="thinking", duration_ms=llm_duration_ms),
+            ToolCall(
+                seq=3,
+                run_id="r1",
+                tool="get_weather",
+                args={"city": "Warszawa"},
+                duration_ms=duration_ms,
+            ),
+            LLMCall(seq=4, run_id="r1", response="18 stopni", duration_ms=llm_duration_ms),
+            RunFinished(seq=5, run_id="r1", final_output="18 stopni"),
+        ]
+    )
+
+
+def test_tool_latency_regression_is_informational_only():
+    baseline = _single_tool_call_trace(duration_ms=100)
+    current = _single_tool_call_trace(duration_ms=5000)
+
+    diff = diff_trajectories(baseline, current)
+
+    assert diff.is_significant is False
+    assert any(
+        e.severity == "informational" and "latency changed" in e.message for e in diff.entries
+    )
+
+
+def test_small_latency_jitter_is_not_reported():
+    baseline = _single_tool_call_trace(duration_ms=100)
+    current = _single_tool_call_trace(duration_ms=110)
+
+    diff = diff_trajectories(baseline, current)
+
+    assert not any("latency" in e.message for e in diff.entries)
+
+
+def test_llm_token_usage_change_is_informational_only():
+    baseline = AgentTrace(
+        [
+            RunStarted(seq=1, run_id="r1", input={}),
+            LLMCall(seq=2, run_id="r1", response="18 stopni", total_tokens=50),
+            RunFinished(seq=3, run_id="r1", final_output="18 stopni"),
+        ]
+    )
+    current = AgentTrace(
+        [
+            RunStarted(seq=1, run_id="r1", input={}),
+            LLMCall(seq=2, run_id="r1", response="18 stopni", total_tokens=400),
+            RunFinished(seq=3, run_id="r1", final_output="18 stopni"),
+        ]
+    )
+
+    diff = diff_trajectories(baseline, current)
+
+    assert diff.is_significant is False
+    assert any(
+        e.severity == "informational" and "token usage changed" in e.message for e in diff.entries
+    )

@@ -134,6 +134,7 @@ class LangGraphRecorder:
             elif kind == "on_chat_model_end":
                 ai_message = event["data"]["output"]
                 tool_calls = getattr(ai_message, "tool_calls", None)
+                usage = getattr(ai_message, "usage_metadata", None) or {}
                 seq = writer.next_seq()
                 writer.append(
                     LLMCall(
@@ -145,6 +146,9 @@ class LangGraphRecorder:
                         tool_calls=list(tool_calls) if tool_calls else None,
                         model=event.get("metadata", {}).get("ls_model_name") or event.get("name"),
                         duration_ms=_duration_ms(pending_starts.pop(ev_run_id, None)),
+                        input_tokens=usage.get("input_tokens"),
+                        output_tokens=usage.get("output_tokens"),
+                        total_tokens=usage.get("total_tokens"),
                     )
                 )
                 last_seq = last_llm_seq = seq

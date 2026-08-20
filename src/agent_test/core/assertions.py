@@ -59,6 +59,16 @@ class TrajectoryAssertion:
         assert count <= n, f"Expected at most {n} LLM call(s), got {count}"
         return self
 
+    def max_total_tokens(self, n: int) -> TrajectoryAssertion:
+        token_counts = [c.total_tokens for c in self.trace.llm_calls if c.total_tokens is not None]
+        assert token_counts, (
+            "No LLM call in this trace reports token usage — the recorded provider "
+            "didn't populate it, so there's nothing to check"
+        )
+        total = sum(token_counts)
+        assert total <= n, f"Expected at most {n} total tokens across the trajectory, used {total}"
+        return self
+
     def final_output_contains(self, substring: str) -> TrajectoryAssertion:
         output = self.trace.final_output
         assert output is not None, "Trace has no final_output (run_finished event missing)"
