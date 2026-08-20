@@ -74,6 +74,7 @@ from typing import Any
 
 from agent_test.core.cassette import CassetteWriter
 from agent_test.core.chaos import ChaosScenario
+from agent_test.core.redaction import Redactor
 from agent_test.core.trace import AgentTrace
 
 
@@ -100,11 +101,21 @@ class LangGraphRecorder:
     """Wraps a compiled LangGraph graph. `arecord(input)` runs it for real
     (real LLM, real tools) and writes every LLM/tool step to a cassette
     (a local JSONL file — see `core/cassette.py`).
+
+    Pass `redactor=Redactor()` (or a customized one, see `core/redaction.py`)
+    to scrub emails/API keys/credit-card-looking numbers — and any dict key
+    named like a secret — out of tool args/results and LLM text *before*
+    they're written. Off by default: recording is exact, byte for byte,
+    unless you opt in.
     """
 
-    def __init__(self, graph: Any, location: str) -> None:
+    def __init__(self, graph: Any, location: str, redactor: Redactor | None = None) -> None:
         self._graph = graph
         self._location = location
+        self._redactor = redactor
+
+    def _redact(self, value: Any) -> Any:
+        return self._redactor.redact(value) if self._redactor else value
 
     async def arecord(
         self, input: dict[str, Any], run_id: str | None = None, **stream_kwargs: Any
@@ -115,7 +126,7 @@ class LangGraphRecorder:
         run_id = run_id or hashlib.sha256(str(input).encode()).hexdigest()[:12]
 
         last_seq = writer.next_seq()
-        writer.append(RunStarted(seq=last_seq, run_id=run_id, input=input))
+        writer.append(RunStarted(seq=last_seq, run_id=run_id, input=self._redact(input)))
         last_llm_seq = last_seq
 
         root_run_id: str | None = None
@@ -142,7 +153,7 @@ class LangGraphRecorder:
                         run_id=run_id,
                         parent_seq=last_seq,
                         prompt_hash=_hash_prompt(event["data"].get("input")),
-                        response=getattr(ai_message, "content", str(ai_message)),
+                        response=self._redact(getattr(ai_message, "content", str(ai_message))),
                         tool_calls=list(tool_calls) if tool_calls else None,
                         model=event.get("metadata", {}).get("ls_model_name") or event.get("name"),
                         duration_ms=_duration_ms(pending_starts.pop(ev_run_id, None)),
@@ -165,8 +176,10 @@ class LangGraphRecorder:
                         run_id=run_id,
                         parent_seq=last_llm_seq,
                         tool=event.get("name", "unknown_tool"),
-                        args=event["data"].get("input") or {},
-                        result=_decode_tool_result(getattr(tool_message, "content", tool_message)),
+                        args=self._redact(event["data"].get("input") or {}),
+                        result=self._redact(
+                            _decode_tool_result(getattr(tool_message, "content", tool_message))
+                        ),
                         status="error"
                         if getattr(tool_message, "status", None) == "error"
                         else "ok",
@@ -186,8 +199,8 @@ class LangGraphRecorder:
                         run_id=run_id,
                         parent_seq=last_llm_seq,
                         tool=event.get("name", "unknown_tool"),
-                        args=event["data"].get("input") or {},
-                        result=str(error) if error is not None else None,
+                        args=self._redact(event["data"].get("input") or {}),
+                        result=self._redact(str(error)) if error is not None else None,
                         status="error",
                         duration_ms=_duration_ms(pending_starts.pop(ev_run_id, None)),
                     )
@@ -198,7 +211,7 @@ class LangGraphRecorder:
                 output = event["data"].get("output") or {}
                 messages = output.get("messages") if isinstance(output, dict) else None
                 if messages:
-                    final_output = getattr(messages[-1], "content", messages[-1])
+                    final_output = self._redact(getattr(messages[-1], "content", messages[-1]))
 
         seq = writer.next_seq()
         writer.append(
