@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1](https://github.com/Davsooonowy/pytest-agent-trace/compare/pytest-agent-trace-v0.2.0...pytest-agent-trace-v0.2.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* dispatch publish.yml explicitly from release-please ([8dd9dab](https://github.com/Davsooonowy/pytest-agent-trace/commit/8dd9dabfaf8e71de526d7e79bd0eac60b2bfd507))
+* dispatch publish.yml explicitly from release-please ([8f2824f](https://github.com/Davsooonowy/pytest-agent-trace/commit/8f2824fb3e55aa9481d67861cc6abd15056b22c8))
+
 ## [0.2.0](https://github.com/Davsooonowy/pytest-agent-trace/compare/pytest-agent-trace-v0.1.0...pytest-agent-trace-v0.2.0) (2026-08-20)
 
 
